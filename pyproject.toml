@@ -1,0 +1,22 @@
+[project]
+name = "pokedex-secure"
+version = "1.0.0"
+description = "A small, security-conscious Pokedex client for the public PokeAPI."
+requires-python = ">=3.10"
+dependencies = ["requests>=2.32.0"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "S"]  # incl. flake8-bandit (S) for security lint
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]  # asserts are expected in tests
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+pythonpath = ["."]
