@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>pokedex-secure — a security-conscious Pokedex lookup</title>
+<style>
+  :root{--bg:#0d141d;--panel:#16212e;--panel2:#1d2b3a;--line:#26364a;--text:#e8eef5;--muted:#93a4b8;--accent:#ffcb05;--blue:#4f9cff;--green:#3ddc97;--red:#ff5c5c}
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#0b111a,#0d141d);color:var(--text);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:26px}
+  h1{margin:0;font-size:22px}
+  .sub{color:var(--muted);font-size:13px;margin:4px 0 18px;max-width:720px}
+  .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+  input[type=text]{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:10px 12px;font-size:14px;width:220px}
+  .btn{background:var(--accent);border:none;color:#1a1a1a;font-weight:700;border-radius:9px;padding:10px 16px;cursor:pointer;font-size:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;max-width:460px;display:none}
+  .card.show{display:block}
+  .row{display:flex;gap:16px;align-items:center}
+  .row img{width:96px;height:96px;image-rendering:pixelated;background:var(--panel2);border-radius:12px}
+  .name{font-size:20px;font-weight:700;text-transform:capitalize}
+  .id{color:var(--muted)}
+  .types{margin-top:6px}
+  .type{display:inline-block;font-size:12px;padding:2px 9px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);margin-right:5px;text-transform:capitalize}
+  .stats{margin-top:14px;display:grid;grid-template-columns:130px 1fr auto;gap:6px 10px;align-items:center}
+  .stat{color:var(--muted)}
+  .barwrap{background:var(--panel2);border-radius:6px;height:8px;overflow:hidden}
+  .fill{height:100%;background:var(--blue)}
+  .err{color:var(--red);margin-top:10px}
+  .sec{margin-top:18px;max-width:640px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .sec h2{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+  .sec li{margin:3px 0}
+  code{background:#0c1621;border:1px solid var(--line);padding:1px 6px;border-radius:6px;color:#bcd3ee}
+</style>
+</head>
+<body>
+  <h1>pokedex-secure</h1>
+  <div class="sub">A deliberately security-conscious Pokedex lookup over the public <a href="https://pokeapi.co" style="color:var(--blue)">PokeAPI</a>. The point is not the Pokedex, it is the engineering discipline around it: validate input before it ever reaches a URL, keep the request safe, and fail without leaking internals.</div>
+  <div class="bar">
+    <input type="text" id="q" placeholder="pikachu or 25" value="pikachu"/>
+    <button class="btn" onclick="lookup()">Look up</button>
+    <span id="status" style="color:var(--muted);font-size:12px"></span>
+  </div>
+  <div class="card" id="card"></div>
+  <div class="err" id="err"></div>
+
+  <div class="sec">
+    <h2>Security controls in this lookup</h2>
+    <ul>
+      <li><b>Allow-list validation</b> before any request: <code>^[a-z0-9-]{1,50}$</code> (blocks injection / SSRF-style input).</li>
+      <li><b>Fixed API host</b> — user input can never redirect the request elsewhere.</li>
+      <li><b>Safe failure</b> — 404 and network errors show a friendly message, never a stack trace or internal URL.</li>
+      <li><b>No secrets, no tracking</b> — the request goes only to PokeAPI; nothing else leaves your browser.</li>
+    </ul>
+    <div style="color:var(--muted);font-size:12px;margin-top:6px">The Python CLI in this repo enforces the same controls, with unit tests, bandit (SAST), pip-audit and gitleaks in CI.</div>
+  </div>
+
+<script>
+const VALID=/^[a-z0-9-]{1,50}$/;
+const API="https://pokeapi.co/api/v2/pokemon/";
+function setStatus(t){document.getElementById("status").textContent=t;}
+async function lookup(){
+  const raw=document.getElementById("q").value.trim().toLowerCase();
+  const err=document.getElementById("err"), card=document.getElementById("card");
+  err.textContent=""; card.classList.remove("show");
+  if(!VALID.test(raw)){ err.textContent="Invalid input: use 1-50 chars of lowercase letters, digits, or hyphens."; return; }
+  setStatus("looking up...");
+  try{
+    const res=await fetch(API+encodeURIComponent(raw));
+    if(res.status===404){ setStatus(""); err.textContent=`No Pokemon matching "${raw}".`; return; }
+    if(!res.ok) throw new Error("bad response");
+    const d=await res.json();
+    render(d); setStatus("");
+  }catch(e){ setStatus(""); err.textContent="Could not reach PokeAPI. Please try again later."; }
+}
+function render(d){
+  const img=d.sprites&&d.sprites.front_default?`<img src="${d.sprites.front_default}" alt="">`:"";
+  const types=(d.types||[]).map(t=>`<span class="type">${t.type.name}</span>`).join("");
+  const stats=(d.stats||[]).map(s=>{const v=s.base_stat;const pct=Math.min(100,v/2);
+    return `<div class="stat">${s.stat.name}</div><div class="barwrap"><div class="fill" style="width:${pct}%"></div></div><div>${v}</div>`;}).join("");
+  document.getElementById("card").innerHTML=`<div class="row">${img}
+    <div><div class="name">${d.name}</div><div class="id">#${String(d.id).padStart(4,'0')}</div>
+    <div class="types">${types}</div>
+    <div class="id" style="margin-top:4px">height ${d.height} &middot; weight ${d.weight}</div></div></div>
+    <div class="stats">${stats}</div>`;
+  document.getElementById("card").classList.add("show");
+}
+lookup(); // auto-load pikachu
+</script>
+</body>
+</html>
